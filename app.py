@@ -1,29 +1,33 @@
 import streamlit as st
 import datetime
 import pandas as pd
+import locale 
 from utils import load_data, save_data, load_users, save_users, PRONTUARIOS_FILE, USERS_FILE
 
-# --- Configuração da Página ---
-st.set_page_config(
-    page_title="Prontuário Médico",
-    page_icon="🏥",
-    layout="centered"
-)
+# Tenta configurar o locale para Português (pt_BR)
+try:
+    locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')
+except locale.Error:
+    try:
+        locale.setlocale(locale.LC_ALL, 'pt_PT.UTF-8')
+    except locale.Error:
+        pass # Mantém o locale padrão se falhar
 
 # --- Cores Personalizadas ---
 HIGHLIGHT_COLOR = "#FF69B4" # Rosa
+GREEN_COLOR = "#4CAF50" # Verde para texto
 
-# --- Gerenciamento de Estado da Sessão ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'prontuarios' not in st.session_state:
-    st.session_state.prontuarios = load_data(PRONTUARIOS_FILE)
-if 'users' not in st.session_state:
-    st.session_state.users = load_users()
-if 'current_user' not in st.session_state:
-    st.session_state.current_user = None
+# --- Funções Auxiliares ---
+def calcular_idade(data_nasc_str):
+    """Calcula a idade a partir da data de nascimento em formato string (AAAA-MM-DD)."""
+    try:
+        data_nasc = datetime.datetime.strptime(data_nasc_str, "%Y-%m-%d").date()
+        hoje = datetime.date.today()
+        return hoje.year - data_nasc.year - ((hoje.month, hoje.day) < (data_nasc.month, data_nasc.day))
+    except:
+        return 'N/D'
 
-# --- Funções de Autenticação ---
+# --- Funções de Autenticação (Mantidas) ---
 def authenticate(username, password):
     """Verifica as credenciais do usuário."""
     users = st.session_state.users
@@ -39,6 +43,16 @@ def logout():
     st.session_state.current_user = None
     st.session_state.prontuarios = load_data(PRONTUARIOS_FILE)
     st.rerun()
+
+# --- Gerenciamento de Estado da Sessão ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'prontuarios' not in st.session_state:
+    st.session_state.prontuarios = load_data(PRONTUARIOS_FILE)
+if 'users' not in st.session_state:
+    st.session_state.users = load_users()
+if 'current_user' not in st.session_state:
+    st.session_state.current_user = None
 
 # --- Layout Principal ---
 if not st.session_state.logged_in:
@@ -63,11 +77,10 @@ if not st.session_state.logged_in:
             </h2>
         </div>
     """, unsafe_allow_html=True)
-    
 
 else:
     st.sidebar.title("Menu")
-    st.sidebar.markdown(f"**👤 Logado como:** <span style='color:#4CAF50;'>{st.session_state.current_user}</span>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"**👤 Logado como:** <span style='color:{GREEN_COLOR};'>{st.session_state.current_user}</span>", unsafe_allow_html=True)
     if st.sidebar.button("Sair", type="secondary", key="logout_btn"):
         logout()
 
@@ -75,32 +88,62 @@ else:
 
     tab1, tab2, tab3 = st.tabs(["📝 Novo Prontuário", "📚 Visualizar Prontuários", "⚙️ Gerenciar Usuários"])
 
-    # --- TAB 1: Novo Prontuário (Sem Alterações) ---
+    # --- TAB 1: Novo Prontuário (Com Data de Atendimento) ---
     with tab1:
         st.subheader("Registrar Novo Paciente")
 
+        # --- Definindo Limites de Data ---
+        HOJE = datetime.date.today()
+        DATA_MINIMA = datetime.date(1920, 1, 1) # Min: 1920
+        
         with st.form("form_prontuario"):
+            # CAMPOS EXISTENTES
             nome = st.text_input("Nome Completo do Paciente", key="nome_paciente")
-            data_nascimento = st.date_input("Data de Nascimento", key="data_nasc", max_value=datetime.date.today())
             profissao = st.text_input("Profissão", key="profissao")
-            diagnostico = st.text_area("Diagnóstico", key="diagnostico")
             
+            # 1. DATA DE NASCIMENTO (Min: 1920 | Max: Hoje)
+            data_nascimento = st.date_input(
+                "Data de Nascimento", 
+                value=datetime.date(2000, 1, 1),
+                min_value=DATA_MINIMA, 
+                max_value=HOJE,
+                key="data_nasc"
+            )
+            
+            # 2. DATA DO ATENDIMENTO (Min: 1920 | Max: Hoje)
+            data_atendimento_obj = st.date_input(
+                "Data do Atendimento",
+                value=HOJE,
+                min_value=DATA_MINIMA,
+                max_value=HOJE
+            )
+
+            diagnostico = st.text_area("Diagnóstico", key="diagnostico")
             evolucao_inicial = st.text_area("Evolução Inicial (opcional)", key="evolucao_inicial")
 
-            submit_button = st.form_submit_button("Salvar Prontuário")
+            submit_button = st.form_submit_button("Salvar")
 
             if submit_button:
                 if nome and data_nascimento and diagnostico:
+                    
+                    # Salvamos as datas no formato ISO para cálculo (AAAA-MM-DD)
+                    data_atendimento_str = data_atendimento_obj.strftime("%Y-%m-%d")
+                    
                     novo_prontuario = {
                         "id": len(st.session_state.prontuarios) + 1,
                         "nome": nome.strip(),
-                        "data_nascimento": data_nascimento.strftime("%Y-%m-%d"),
+                        "data_nascimento": data_nascimento.strftime("%Y-%m-%d"), 
                         "profissao": profissao.strip(),
                         "diagnostico": diagnostico.strip(),
                         "evolucao": [
-                            {"data": datetime.date.today().strftime("%Y-%m-%d %H:%M:%S"), "texto": evolucao_inicial.strip()}
+                            # Formato da EVOLUÇÃO (DD-MM-AAAA e Hora)
+                            {"data": datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S"), "texto": evolucao_inicial.strip()} 
                         ] if evolucao_inicial.strip() else [],
-                        "data_criacao": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        "data_atendimento": data_atendimento_str,
+                        
+                        # Formato da CRIAÇÃO (DD-MM-AAAA)
+                        "data_criacao": datetime.datetime.now().strftime("%d-%m-%Y") 
                     }
                     st.session_state.prontuarios.append(novo_prontuario)
                     save_data(st.session_state.prontuarios, PRONTUARIOS_FILE)
@@ -109,7 +152,7 @@ else:
                 else:
                     st.error("Por favor, preencha Nome, Data de Nascimento e Diagnóstico.")
 
-    # --- TAB 2: Visualizar Prontuários (Com Exclusão) ---
+    # --- TAB 2: Visualizar Prontuários (Com Pandas) ---
     with tab2:
         st.subheader("Meus Prontuários")
 
@@ -117,49 +160,61 @@ else:
             st.info("Nenhum prontuário registrado ainda.")
         else:
             df = pd.DataFrame(st.session_state.prontuarios)
-            df['idade'] = df['data_nascimento'].apply(lambda x: datetime.date.today().year - datetime.datetime.strptime(x, "%Y-%m-%d").year)
+            df['idade'] = df['data_nascimento'].apply(lambda x: calcular_idade(x))
             
-            cols_display = ["id", "nome", "idade", "profissao", "diagnostico", "data_criacao"]
-            st.dataframe(df[cols_display], use_container_width=True)
+            # --- FORMATAÇÃO PARA DD-MM-AAAA (EXIBIÇÃO) ---
+            df['data_atendimento'] = pd.to_datetime(df['data_atendimento']).dt.strftime('%d-%m-%Y')
+            df['data_nascimento'] = pd.to_datetime(df['data_nascimento']).dt.strftime('%d-%m-%Y')
+            
+            # Adicionamos a Data de Nascimento à exibição principal
+            cols_display = ["id", "nome", "idade", "profissao", "diagnostico", "data_atendimento", "data_nascimento", "data_criacao"]
+            
+            # Renomeamos as colunas para o Português para exibição na tabela
+            df_display = df.rename(columns={
+                'data_atendimento': 'Atendimento',
+                'data_criacao': 'Criação',
+                'data_nascimento': 'Nascimento',
+                'nome': 'Nome',
+                'idade': 'Idade',
+                'profissao': 'Profissão',
+                'diagnostico': 'Diagnóstico'
+            })
+            
+            st.dataframe(df_display[list(df_display.columns)], use_container_width=True)
 
             # --- SEÇÃO DE EXCLUSÃO ---
             st.markdown("---")
             st.subheader("🚨 Excluir Prontuário")
             
-            # Garante que há IDs para excluir (mínimo 1)
-            max_id = max(p['id'] for p in st.session_state.prontuarios)
+            max_id = df['id'].max()
             
             with st.form("form_excluir"):
                 prontuario_id_excluir = st.number_input(
                     "Digite o ID do prontuário a ser excluído:",
                     min_value=1,
-                    max_value=max_id,
+                    max_value=int(max_id),
                     step=1
                 )
                 btn_excluir = st.form_submit_button("Confirmar Exclusão", type="primary")
 
                 if btn_excluir:
-                    # Encontra o índice na lista de estado de sessão
-                    indice_para_remover = -1
-                    for i, pront in enumerate(st.session_state.prontuarios):
-                        if pront['id'] == prontuario_id_excluir:
-                            indice_para_remover = i
-                            break
-
-                    if indice_para_remover != -1:
-                        # Remove o item da lista
-                        nome_removido = st.session_state.prontuarios[indice_para_remover]['nome']
+                    indice_para_remover = df[df['id'] == prontuario_id_excluir].index[0]
+                    
+                    if indice_para_remover >= 0:
+                        nome_removido = df.loc[indice_para_remover, 'nome']
+                        
+                        # Remove do estado de sessão
                         st.session_state.prontuarios.pop(indice_para_remover)
                         
                         # Salva o estado modificado no arquivo JSON
                         save_data(st.session_state.prontuarios, PRONTUARIOS_FILE)
                         
                         st.success(f"Prontuário ID {prontuario_id_excluir} ({nome_removido}) excluído permanentemente.")
-                        st.rerun() # Recarrega para atualizar a tabela
+                        st.rerun()
                     else:
                         st.error(f"Prontuário com ID {prontuario_id_excluir} não encontrado.")
 
-            # --- SEÇÃO DE DETALHES E EVOLUÇÃO (Movemos para baixo) ---
+            # --- SEÇÃO DE DETALHES E EVOLUÇÃO ---
             st.markdown("---")
             st.subheader("🔎 Detalhes e Evolução")
             
@@ -170,41 +225,48 @@ else:
             )
 
             if prontuario_selecionado:
-                pront_idx = df[df['nome'] == prontuario_selecionado].index[0]
-                pront = st.session_state.prontuarios[pront_idx]
+                pront = df_display[df_display['Nome'] == prontuario_selecionado].iloc[0].to_dict()
 
-                st.markdown(f"### Paciente: {pront['nome']} <br><small>Nasc.: {pront['data_nascimento']} | Profissão: {pront['profissao']}</small>", unsafe_allow_html=True)
-                st.write(f"**Diagnóstico:** {pront['diagnostico']}")
+                if pront:
+                    st.markdown(f"### Paciente: {pront['Nome']} <br><small>Nasc.: {pront['Nascimento']} | Profissão: {pront['Profissão']}</small>", unsafe_allow_html=True)
+                    st.write(f"**Diagnóstico:** {pront['Diagnóstico']}") 
 
-                st.markdown("---")
-                st.write("**Histórico de Evolução:**")
-                if pront['evolucao']:
-                    for ev in pront['evolucao']:
-                        st.markdown(f"<div style='border: 1px solid #4CAF50; padding: 10px; border-radius: 5px; margin-bottom: 5px;'>**Data:** {ev['data']} <br>{ev['texto']}</div>", unsafe_allow_html=True)
-                else:
-                    st.info("Nenhuma evolução registrada para este paciente ainda.")
-                
-                # Formulário para adicionar nova evolução
-                with st.form(f"form_add_evolucao_{pront['id']}"):
-                    nova_evolucao_texto = st.text_area("Adicionar Nova Evolução", key=f"nova_evolucao_texto_{pront['id']}")
+                    st.markdown("---")
+                    st.write("**Histórico de Evolução:**")
                     
-                    btn_add_evolucao = st.form_submit_button("Adicionar Evolução", type="primary") 
+                    pront_original = next((p for p in st.session_state.prontuarios if p['nome'] == pront['Nome']), None)
                     
-                    if btn_add_evolucao and nova_evolucao_texto.strip():
-                        pront['evolucao'].append({
-                            "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "texto": nova_evolucao_texto.strip()
-                        })
-                        save_data(st.session_state.prontuarios, PRONTUARIOS_FILE)
-                        st.markdown(f"**<p style='color:{HIGHLIGHT_COLOR};'>Evolução adicionada para {pront['nome']}!</p>**", unsafe_allow_html=True)
-                        st.rerun()
+                    if pront_original and pront_original['evolucao']:
+                        for ev in pront_original['evolucao']:
+                            st.markdown(f"<div style='border: 1px solid {GREEN_COLOR}; padding: 10px; border-radius: 5px; margin-bottom: 5px;'>**Data:** {ev['data']} <br>{ev['texto']}</div>", unsafe_allow_html=True)
+                    else:
+                        st.info("Nenhuma evolução registrada para este paciente ainda.")
+                    
+                    # Formulário para adicionar nova evolução
+                    with st.form(f"form_add_evolucao_{pront['id']}"):
+                        nova_evolucao_texto = st.text_area("Adicionar Nova Evolução", key=f"nova_evolucao_texto_{pront['id']}")
+                        
+                        btn_add_evolucao = st.form_submit_button("Adicionar Evolução", type="primary") 
+                        
+                        if btn_add_evolucao and nova_evolucao_texto.strip():
+                            # Encontra o índice original para modificação
+                            idx_original = next((i for i, p in enumerate(st.session_state.prontuarios) if p['id'] == pront['ID']), -1)
+                            
+                            if idx_original != -1:
+                                st.session_state.prontuarios[idx_original]['evolucao'].append({
+                                    "data": datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S"), # Novo formato DD-MM-AAAA
+                                    "texto": nova_evolucao_texto.strip()
+                                })
+                                save_data(st.session_state.prontuarios, PRONTUARIOS_FILE)
+                                st.markdown(f"**<p style='color:{HIGHLIGHT_COLOR};'>Evolução adicionada para {pront['Nome']}!</p>**", unsafe_allow_html=True)
+                                st.rerun()
 
     # --- TAB 3: Gerenciar Usuários (Sem Alterações) ---
     with tab3:
         st.subheader("Gerenciamento de Usuários")
         
         if st.session_state.current_user == 'admin': 
-            st.markdown(f"<span style='color:#FF69B4;'>Usuários Ativos:</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:{HIGHLIGHT_COLOR};'>Usuários Ativos:</span>", unsafe_allow_html=True)
             for user, pwd in st.session_state.users.items():
                 st.write(f"- **{user}**")
             
