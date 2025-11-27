@@ -1,0 +1,19 @@
+# Arquivos de Build, Cache e Dependências
+
+# Ambientes Python e Cache
+venv/
+__pycache__/
+*.pyc
+
+# Node.js
+node_modules/
+package-lock.json
+
+# IDE
+.idea/
+
+# Capacitor/Android Build
+android/
+
+# Streamlit Config (para segredos)
+.streamlit/

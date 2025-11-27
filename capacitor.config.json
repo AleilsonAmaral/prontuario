@@ -1,0 +1,11 @@
+{
+  "appId": "com.seu.prontuario", 
+  "appName": "ProntuarioDigital",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+   
+    "url": "https://prontuariogit-j5czqvyvrxvdhrzh7giwnl.streamlit.app?app_key=SEGREDO_DE_ACESSO_UNICO_1A2B3C4D", 
+    "cleartext": true
+  }
+}
